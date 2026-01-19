@@ -5,24 +5,19 @@ services:
     region: singapore
     plan: free
 
-    # Monorepo support
     rootDir: apps/api
 
     buildCommand: pip install -r requirements.txt
 
-    # Free tier doesn't support Render's pre-deploy command feature.
-    # So we run migrations as part of startCommand instead.
+    # Free tier doesn't support preDeployCommand, so run migrations at startup
     startCommand: >
-      bash -lc "alembic upgrade head &&
-      uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers"
-
-    healthCheckPath: /health
+      sh -c "alembic upgrade head &&
+             uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers"
 
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.3
 
-      # Link to the Render Postgres defined below
       - key: DATABASE_URL
         fromDatabase:
           name: chatbot-platform-db
@@ -34,12 +29,15 @@ services:
       - key: CLERK_PEM_PUBLIC_KEY
         sync: false
 
-      # Comma-separated list:
-      # - your deployed frontend origin (e.g. https://yourapp.vercel.app)
-      # - plus http://localhost:3000 for local dev
       - key: ALLOWED_ORIGINS
         sync: false
 
 databases:
   - name: chatbot-platform-db
     plan: free
+    region: singapore
+    postgresMajorVersion: "18"
+    databaseName: chatbot_db
+    user: chatbot_user
+
+
