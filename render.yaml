@@ -2,7 +2,7 @@ services:
   - type: web
     name: chatbot-platform-api
     runtime: python
-    region: oregon
+    region: singapore
     plan: free
 
     # Monorepo support
