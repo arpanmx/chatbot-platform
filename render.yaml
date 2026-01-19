@@ -10,20 +10,23 @@ services:
 
     buildCommand: pip install -r requirements.txt
 
-    # Run migrations once per deploy (recommended)
-    preDeployCommand: alembic upgrade head
+    # Free tier doesn't support Render's pre-deploy command feature.
+    # So we run migrations as part of startCommand instead.
+    startCommand: >
+      bash -lc "alembic upgrade head &&
+      uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers"
 
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers
+    healthCheckPath: /health
 
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.3
 
-      # Set this to your NEON connection string in Render Dashboard (recommended)
-      # Example:
-      # postgresql://USER:PASSWORD@HOST/DB?sslmode=require
+      # Link to the Render Postgres defined below
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: chatbot-platform-db
+          property: connectionString
 
       - key: OPENAI_API_KEY
         sync: false
@@ -31,9 +34,12 @@ services:
       - key: CLERK_PEM_PUBLIC_KEY
         sync: false
 
-      # Comma-separated list of allowed origins
-      # e.g. https://your-vercel-app.vercel.app,http://localhost:3000
+      # Comma-separated list:
+      # - your deployed frontend origin (e.g. https://yourapp.vercel.app)
+      # - plus http://localhost:3000 for local dev
       - key: ALLOWED_ORIGINS
         sync: false
 
-
+databases:
+  - name: chatbot-platform-db
+    plan: free
