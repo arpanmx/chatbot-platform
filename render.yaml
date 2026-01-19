@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: chatbot-platform-api
+    runtime: python
+    region: oregon
+    plan: free
+
+    # Monorepo support
+    rootDir: apps/api
+
+    buildCommand: pip install -r requirements.txt
+
+    # Run migrations once per deploy (recommended)
+    preDeployCommand: alembic upgrade head
+
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+
+      # Set this to your NEON connection string in Render Dashboard (recommended)
+      # Example:
+      # postgresql://USER:PASSWORD@HOST/DB?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+
+      - key: OPENAI_API_KEY
+        sync: false
+
+      - key: CLERK_PEM_PUBLIC_KEY
+        sync: false
+
+      # Comma-separated list of allowed origins
+      # e.g. https://your-vercel-app.vercel.app,http://localhost:3000
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+
