@@ -9,10 +9,10 @@ services:
 
     buildCommand: pip install -r requirements.txt
 
-    # Free tier doesn't support preDeployCommand, so run migrations at startup
     startCommand: >
-      sh -c "alembic upgrade head &&
-             uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers"
+      sh -c 'export CLERK_PEM_PUBLIC_KEY="$(cat /etc/secrets/clerk_public_key.pem)" &&
+             alembic upgrade head &&
+             uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers'
 
     envVars:
       - key: PYTHON_VERSION
@@ -26,9 +26,8 @@ services:
       - key: OPENAI_API_KEY
         sync: false
 
-      - key: CLERK_PEM_PUBLIC_KEY
-        sync: false
-
+      # IMPORTANT: do NOT set CLERK_PEM_PUBLIC_KEY as an env var anymore.
+      # We load it from the secret file in startCommand.
       - key: ALLOWED_ORIGINS
         sync: false
 
