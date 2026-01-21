@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuth } from '@clerk/nextjs'
+import { useCallback, useMemo } from 'react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
 
@@ -11,7 +12,7 @@ function sleep(ms: number) {
 export function useApiClient() {
   const { getToken, isLoaded, isSignedIn } = useAuth()
 
-  async function getTokenReady() {
+  const getTokenReady = useCallback(async () => {
     // If Clerk isn't ready yet, don't even try
     if (!isLoaded) return null
     if (!isSignedIn) return null
@@ -23,49 +24,35 @@ export function useApiClient() {
       await sleep(200)
     }
     return null
-  }
+  }, [getToken, isLoaded, isSignedIn])
 
-  async function fetchApi(endpoint: string, options: RequestInit = {}) {
-    const token = await getTokenReady()
+  const fetchApi = useCallback(
+    async (endpoint: string, options: RequestInit = {}) => {
+      const token = await getTokenReady()
 
-    // If this is a protected API call and we don't have a token, fail fast.
-    if (!token) {
-      throw new Error('Not authenticated')
-    }
-
-    const headers = new Headers(options.headers)
-
-    // If body is FormData, don't set Content-Type (browser sets boundary)
-    const isFormData =
-      typeof FormData !== 'undefined' && options.body instanceof FormData
-
-    if (!isFormData && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json')
-    }
-
-    headers.set('Authorization', `Bearer ${token}`)
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    })
-
-    if (!response.ok) {
-      const text = await response.text()
-      try {
-        const error = JSON.parse(text)
-        throw new Error(error.detail || error.message || `HTTP ${response.status}`)
-      } catch {
-        throw new Error(text || `HTTP ${response.status}`)
+      // If this is a protected API call and we don't have a token, fail fast.
+      if (!token) {
+        throw new Error('Not authenticated')
       }
-    }
 
-    if (response.status === 204) return null
+      const headers = new Headers(options.headers)
 
-    const contentType = response.headers.get('content-type') || ''
-    if (contentType.includes('application/json')) return response.json()
-    return response.text()
-  }
+      // If body is FormData, don't set Content-Type (browser sets boundary)
+      const isFormData =
+        typeof FormData !== 'undefined' && options.body instanceof FormData
 
-  return { fetchApi, getToken, isLoaded, isSignedIn }
-}
+      if (!isFormData && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json')
+      }
+
+      headers.set('Authorization', `Bearer ${token}`)
+
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        try {
+          const error
