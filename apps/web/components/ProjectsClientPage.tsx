@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import CreateProjectForm from '@/components/CreateProjectForm'
 import HeaderUserMenu from '@/components/HeaderUserMenu'
@@ -12,25 +12,40 @@ export default function ProjectsClientPage() {
 
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const loadingRef = useRef(false)
+  const hasLoadedRef = useRef(false)
 
-  const load = useCallback(async () => {
+  const loadProjects = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+
     try {
       setError(null)
       const data = await fetchApi('/projects')
-      setProjects(data as Project[])
+      setProjects((data as Project[]) ?? [])
     } catch (e) {
       setError((e as Error).message)
       setProjects([])
+    } finally {
+      loadingRef.current = false
     }
   }, [fetchApi])
 
   useEffect(() => {
-    // Wait for Clerk to be ready and the user to actually be signed in.
     if (!isLoaded) return
-    if (!isSignedIn) return
 
-    load()
-  }, [isLoaded, isSignedIn, load])
+    if (!isSignedIn) {
+      hasLoadedRef.current = false
+      setProjects(null)
+      setError(null)
+      return
+    }
+
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true
+      loadProjects()
+    }
+  }, [isLoaded, isSignedIn, loadProjects])
 
   const showAuthLoading = !isLoaded
   const showSignedOut = isLoaded && !isSignedIn
@@ -49,7 +64,7 @@ export default function ProjectsClientPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <CreateProjectForm onCreated={load} />
+            <CreateProjectForm onCreated={loadProjects} />
             <HeaderUserMenu />
           </div>
         </div>
@@ -72,9 +87,8 @@ export default function ProjectsClientPage() {
             {error}
             <button
               onClick={() => {
-                // Reset back to loading state for nicer UX
                 setProjects(null)
-                load()
+                loadProjects()
               }}
               className="ml-3 underline text-red-100 hover:text-white"
             >
