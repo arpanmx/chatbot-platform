@@ -89,5 +89,6 @@ def list_files(
     return (
         db.query(FileMetadata)
         .filter(FileMetadata.project_id == project_id)
+        .order_by(FileMetadata.created_at.desc())
         .all()
     )
