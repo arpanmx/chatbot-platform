@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import CreateProjectForm from '@/components/CreateProjectForm'
 import HeaderUserMenu from '@/components/HeaderUserMenu'
@@ -8,11 +8,12 @@ import { useApiClient } from '@/lib/api-client'
 import type { Project } from '@/types'
 
 export default function ProjectsClientPage() {
-  const { fetchApi } = useApiClient()
+  const { fetchApi, isLoaded, isSignedIn } = useApiClient()
+
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setError(null)
       const data = await fetchApi('/projects')
@@ -21,11 +22,19 @@ export default function ProjectsClientPage() {
       setError((e as Error).message)
       setProjects([])
     }
-  }
+  }, [fetchApi])
 
   useEffect(() => {
+    // Wait for Clerk to be ready and the user to actually be signed in.
+    if (!isLoaded) return
+    if (!isSignedIn) return
+
     load()
-  }, [])
+  }, [isLoaded, isSignedIn, load])
+
+  const showAuthLoading = !isLoaded
+  const showSignedOut = isLoaded && !isSignedIn
+  const showDataLoading = isLoaded && isSignedIn && projects === null
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -40,33 +49,45 @@ export default function ProjectsClientPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <CreateProjectForm onCreated={load}/>
+            <CreateProjectForm onCreated={load} />
             <HeaderUserMenu />
           </div>
         </div>
 
         {/* Content */}
-        {projects === null ? (
+        {showAuthLoading ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8 text-zinc-300">
-            Loading…
+            Loading session…
+          </div>
+        ) : showSignedOut ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8 text-zinc-300">
+            Please sign in to view your projects.
+          </div>
+        ) : showDataLoading ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8 text-zinc-300">
+            Loading projects…
           </div>
         ) : error ? (
           <div className="rounded-2xl border border-red-900/60 bg-red-950/30 p-4 text-red-200">
             {error}
             <button
-              onClick={load}
+              onClick={() => {
+                // Reset back to loading state for nicer UX
+                setProjects(null)
+                load()
+              }}
               className="ml-3 underline text-red-100 hover:text-white"
             >
               Retry
             </button>
           </div>
-        ) : projects.length === 0 ? (
+        ) : (projects ?? []).length === 0 ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8 text-zinc-300">
             No projects yet. Create one to get started.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
+            {projects!.map((project) => (
               <Link
                 key={project.id}
                 href={`/projects/${project.id}`}
