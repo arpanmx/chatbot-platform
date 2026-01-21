@@ -2,23 +2,32 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApiClient } from '@/lib/api-client'
-import { Message } from '@/types'
+import type { Message } from '@/types'
 
 type SsePayload =
   | { type: 'token'; content: string }
   | { type: 'done'; content: string }
   | { type: 'error'; message: string }
 
+function isSsePayload(x: unknown): x is SsePayload {
+  return (
+    !!x &&
+    typeof x === 'object' &&
+    'type' in x &&
+    (x as any).type &&
+    typeof (x as any).type === 'string'
+  )
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
 
 export default function ChatInterface({
-    projectId,
-    initialConversationId,
-  }: {
-    projectId: string
-    initialConversationId?: string | null
-  }) {
-  
+  projectId,
+  initialConversationId,
+}: {
+  projectId: string
+  initialConversationId?: string | null
+}) {
   const { fetchApi, getToken } = useApiClient()
 
   const [conversationId, setConversationId] = useState<string | null>(
@@ -28,26 +37,27 @@ export default function ChatInterface({
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [streamingMessage, setStreamingMessage] = useState('')
+  const [uiError, setUiError] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const canSend = useMemo(() => !streaming && input.trim().length > 0, [streaming, input])
+  // Prevent the "conversationId changed" effect from immediately wiping optimistic messages
+  // when we create a brand new conversation.
+  const skipNextLoadRef = useRef(false)
 
-  async function createConversationAndReturnId(): Promise<string> {
-    const conv = await fetchApi(`/projects/${projectId}/conversations`, {
-      method: 'POST',
-      body: JSON.stringify({ title: 'New Chat' }),
-    })
-    const id = conv.id as string
-    setConversationId(id)
-    setMessages([])
-    return id
-  }
+  // Prevent state updates after unmount
+  const mountedRef = useRef(true)
+
+  const canSend = useMemo(
+    () => !streaming && input.trim().length > 0,
+    [streaming, input]
+  )
 
   async function loadMessages(convId: string) {
     const msgs = await fetchApi(`/conversations/${convId}/messages`)
-    setMessages(msgs)
+    if (!mountedRef.current) return
+    setMessages(msgs as Message[])
   }
 
   function appendOptimisticUserMessage(convId: string, text: string) {
@@ -61,19 +71,43 @@ export default function ChatInterface({
     setMessages((prev) => [...prev, tempUserMsg])
   }
 
+  async function createConversationAndReturnId(): Promise<string> {
+    const conv = await fetchApi(`/projects/${projectId}/conversations`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'New Chat' }),
+    })
+
+    const id = (conv as any).id as string
+
+    // IMPORTANT:
+    // Setting conversationId triggers the loadMessages effect (which would return [])
+    // and could wipe the optimistic message. So we skip the next load once.
+    skipNextLoadRef.current = true
+    setConversationId(id)
+
+    // We intentionally do NOT call setMessages([]) here.
+    // handleSend() will append the optimistic message immediately.
+    return id
+  }
+
   async function handleSend() {
     if (!canSend) return
+
+    setUiError(null)
 
     const userText = input.trim()
     setInput('')
     setStreaming(true)
     setStreamingMessage('')
 
-    // Ensure we have a conversation ID AND continue sending in the same click
+    // Ensure we have a conversation ID and send in this same click
     const convId = conversationId ?? (await createConversationAndReturnId())
 
-    // Show the user message immediately
+    // Add user message immediately (optimistic)
     appendOptimisticUserMessage(convId, userText)
+
+    // Stream assistant response
+    const abortController = new AbortController()
 
     try {
       const token = await getToken()
@@ -85,6 +119,7 @@ export default function ChatInterface({
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ message: userText }),
+        signal: abortController.signal,
       })
 
       if (!response.ok || !response.body) {
@@ -95,7 +130,6 @@ export default function ChatInterface({
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
 
-      // SSE parsing buffer (chunks may split events/lines/JSON)
       let buffer = ''
       let full = ''
 
@@ -106,33 +140,35 @@ export default function ChatInterface({
         buffer += decoder.decode(value, { stream: true })
 
         // SSE events are separated by blank line "\n\n"
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() || ''
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
 
-        for (const part of parts) {
+        for (const evt of events) {
           // Each event can have multiple lines; we only care about "data:"
-          const lines = part.split('\n')
+          const lines = evt.split('\n')
           for (const line of lines) {
             if (!line.startsWith('data:')) continue
+
             const jsonText = line.slice(5).trim()
             if (!jsonText) continue
 
-            let payload: SsePayload | null = null
+            let parsed: unknown
             try {
-              payload = JSON.parse(jsonText)
+              parsed = JSON.parse(jsonText)
             } catch {
-              // If JSON is malformed (rare), ignore this line
               continue
             }
 
-            if (payload.type === 'token') {
-              full += payload.content
-              setStreamingMessage(full)
-            } else if (payload.type === 'done') {
-              full = payload.content
-              setStreamingMessage(full)
-            } else if (payload.type === 'error') {
-              throw new Error(payload.message || 'Streaming error')
+            if (!isSsePayload(parsed)) continue
+
+            if (parsed.type === 'token') {
+              full += parsed.content ?? ''
+              if (mountedRef.current) setStreamingMessage(full)
+            } else if (parsed.type === 'done') {
+              full = parsed.content ?? full
+              if (mountedRef.current) setStreamingMessage(full)
+            } else if (parsed.type === 'error') {
+              throw new Error(parsed.message || 'Streaming error')
             }
           }
         }
@@ -140,22 +176,51 @@ export default function ChatInterface({
 
       // Pull saved messages from backend (user + assistant)
       await loadMessages(convId)
+      if (!mountedRef.current) return
+
       setStreamingMessage('')
       inputRef.current?.focus()
     } catch (err: any) {
-      // Keep the optimistic user message visible; just show error
-      alert(err?.message || 'Failed to send message')
+      if (!mountedRef.current) return
+      // Keep optimistic user message visible; show an inline error
+      setUiError(err?.message || 'Failed to send message')
     } finally {
+      if (!mountedRef.current) return
       setStreaming(false)
     }
   }
 
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingMessage])
 
+  // Initial mount/unmount guard
   useEffect(() => {
-    if (conversationId) loadMessages(conversationId)
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  // If parent changes selected conversation (ProjectShell), update and load it.
+  useEffect(() => {
+    if (initialConversationId === undefined) return
+    setConversationId(initialConversationId ?? null)
+  }, [initialConversationId])
+
+  // Load messages when conversationId changes, except when we intentionally skip
+  // the first load right after creating a conversation (to avoid wiping optimistic msg).
+  useEffect(() => {
+    if (!conversationId) return
+
+    if (skipNextLoadRef.current) {
+      skipNextLoadRef.current = false
+      return
+    }
+
+    loadMessages(conversationId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId])
 
   return (
@@ -171,17 +236,28 @@ export default function ChatInterface({
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {!conversationId && messages.length === 0 && (
           <div className="max-w-xl mx-auto mt-10 text-center text-zinc-300">
-            <div className="text-xl font-semibold text-zinc-100">Message your agent</div>
+            <div className="text-xl font-semibold text-zinc-100">
+              Message your agent
+            </div>
             <div className="mt-2 text-sm text-zinc-400">
               Start by sending a message below.
             </div>
           </div>
         )}
 
+        {uiError && (
+          <div className="rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+            {uiError}
+          </div>
+        )}
+
         {messages.map((msg) => {
           const isUser = msg.role === 'user'
           return (
-            <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div
+              key={msg.id}
+              className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+            >
               <div
                 className={[
                   'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
@@ -237,3 +313,5 @@ export default function ChatInterface({
     </div>
   )
 }
+
+
