@@ -1,43 +1,80 @@
 'use client'
 
 import { useAuth } from '@clerk/nextjs'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+const TOKEN_RETRY_DELAY_MS = 200
+const TOKEN_RETRY_ATTEMPTS = 3
 
 function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function parseResponse(response: Response) {
+  if (response.status === 204) {
+    return null
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return response.json()
+  }
+
+  return response.text()
+}
+
+function errorMessageFromPayload(payload: unknown, fallback: string) {
+  if (!payload) return fallback
+
+  if (typeof payload === 'string') return payload
+
+  if (typeof payload === 'object' && 'detail' in payload) {
+    const detail = (payload as { detail?: string }).detail
+    if (detail) return detail
+  }
+
+  return fallback
 }
 
 export function useApiClient() {
   const { getToken, isLoaded, isSignedIn } = useAuth()
+  const inFlightTokenRef = useRef<Promise<string | null> | null>(null)
 
-  const getTokenReady = useCallback(async () => {
-    // If Clerk isn't ready yet, don't even try
-    if (!isLoaded) return null
-    if (!isSignedIn) return null
+  const getAuthToken = useCallback(async () => {
+    if (!isLoaded || !isSignedIn) return null
 
-    // Token can be briefly unavailable right after redirect; retry a bit
-    for (let i = 0; i < 5; i++) {
-      const token = await getToken()
-      if (token) return token
-      await sleep(200)
+    if (inFlightTokenRef.current) {
+      return inFlightTokenRef.current
     }
-    return null
+
+    const tokenPromise = (async () => {
+      for (let attempt = 0; attempt < TOKEN_RETRY_ATTEMPTS; attempt += 1) {
+        const token = await getToken()
+        if (token) return token
+        await sleep(TOKEN_RETRY_DELAY_MS)
+      }
+      return null
+    })()
+
+    inFlightTokenRef.current = tokenPromise
+
+    try {
+      return await tokenPromise
+    } finally {
+      inFlightTokenRef.current = null
+    }
   }, [getToken, isLoaded, isSignedIn])
 
   const fetchApi = useCallback(
     async (endpoint: string, options: RequestInit = {}) => {
-      const token = await getTokenReady()
+      const token = await getAuthToken()
 
-      // If this is a protected API call and we don't have a token, fail fast.
       if (!token) {
         throw new Error('Not authenticated')
       }
 
       const headers = new Headers(options.headers)
-
-      // If body is FormData, don't set Content-Type (browser sets boundary)
       const isFormData =
         typeof FormData !== 'undefined' && options.body instanceof FormData
 
@@ -53,6 +90,26 @@ export function useApiClient() {
       })
 
       if (!response.ok) {
-        const text = await response.text()
-        try {
-          const error
+        const payload = await parseResponse(response)
+        const message = errorMessageFromPayload(
+          payload,
+          `Request failed (HTTP ${response.status})`
+        )
+        throw new Error(message)
+      }
+
+      return parseResponse(response)
+    },
+    [getAuthToken]
+  )
+
+  return useMemo(
+    () => ({
+      fetchApi,
+      getToken: getAuthToken,
+      isLoaded,
+      isSignedIn,
+    }),
+    [fetchApi, getAuthToken, isLoaded, isSignedIn]
+  )
+}
