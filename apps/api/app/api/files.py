@@ -48,12 +48,14 @@ async def upload_file(
         )
 
     # Upload to OpenAI Files API
+    purpose = "user_data"
+
     try:
         openai_file = await upload_file_to_openai(
             filename=file.filename or "upload",
             content=content,
             content_type=file.content_type,
-            purpose="user_data",
+            purpose=purpose,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -62,7 +64,9 @@ async def upload_file(
     file_metadata = FileMetadata(
         project_id=project_id,
         user_id=user_id,
-        filename=file.filename,
+        filename=file.filename or "upload",
+        mime_type=file.content_type,
+        purpose=purpose,
         openai_file_id=openai_file.id,
         size_bytes=getattr(openai_file, "bytes", len(content)),
     )
@@ -87,5 +91,3 @@ def list_files(
         .filter(FileMetadata.project_id == project_id)
         .all()
     )
-
-
