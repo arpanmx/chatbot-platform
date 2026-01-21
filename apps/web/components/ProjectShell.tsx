@@ -4,6 +4,7 @@ import { useState } from 'react'
 import ChatInterface from '@/components/ChatInterface'
 import ConversationsList from '@/components/ConversationsList'
 import PromptsManager from '@/components/PromptsManager'
+import ProjectFilesManager from '@/components/ProjectFilesManager'
 import { Conversation, Prompt } from '@/types'
 
 export default function ProjectShell({
@@ -24,6 +25,7 @@ export default function ProjectShell({
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       <div className="lg:col-span-1 space-y-6">
         <PromptsManager projectId={projectId} initialPrompts={prompts} />
+        <ProjectFilesManager projectId={projectId} />
 
         <ConversationsList
           initialConversations={conversations}

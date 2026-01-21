@@ -30,10 +30,12 @@ export interface Project {
     created_at: string
   }
   
-  export interface FileMetadata {
+export interface FileMetadata {
     id: string
     filename: string
     openai_file_id: string
     size_bytes: number | null
+    mime_type?: string | null
+    purpose?: string | null
     created_at: string
   }
