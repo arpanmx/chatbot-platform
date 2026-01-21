@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useApiClient } from '@/lib/api-client'
 
-export default function CreateProjectForm() {
+export default function CreateProjectForm({ onCreated }: { onCreated?: () => void }) {
   const [isOpen, setIsOpen] = useState(false)
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -23,6 +23,7 @@ export default function CreateProjectForm() {
       })
       setName('')
       setIsOpen(false)
+      onCreated?.()
       router.refresh()
     } catch (error) {
       alert('Failed to create project: ' + (error as Error).message)
