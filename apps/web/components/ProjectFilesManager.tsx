@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useApiClient } from '@/lib/api-client'
 import type { FileMetadata } from '@/types'
 
@@ -31,7 +31,7 @@ export default function ProjectFilesManager({
   const [error, setError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  async function loadFiles() {
+  const loadFiles = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -42,11 +42,25 @@ export default function ProjectFilesManager({
     } finally {
       setLoading(false)
     }
-  }
+  }, [fetchApi, projectId])
+
+  const shouldPoll = files.some(
+    (file) =>
+      file.vector_store_file_id &&
+      file.vector_store_file_status !== 'completed',
+  )
 
   useEffect(() => {
-    loadFiles()
-  }, [projectId])
+    void loadFiles()
+  }, [loadFiles])
+
+  useEffect(() => {
+    if (!shouldPoll) return
+    const interval = setInterval(() => {
+      void loadFiles()
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [loadFiles, shouldPoll])
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -103,7 +117,7 @@ export default function ProjectFilesManager({
           disabled={uploading}
           className="w-full rounded-full bg-indigo-500 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {uploading ? 'Uploading…' : 'Upload to OpenAI Files'}
+          {uploading ? 'Uploading…' : 'Upload & index file'}
         </button>
         {uploadError ? (
           <p className="text-xs text-red-200">{uploadError}</p>
@@ -130,13 +144,29 @@ export default function ProjectFilesManager({
                   <span className="font-medium text-zinc-100">
                     {file.filename}
                   </span>
-                  <span className="text-zinc-400">
-                    {formatBytes(file.size_bytes)}
-                  </span>
+                  <div className="flex items-center gap-3 text-zinc-400">
+                    <span>{formatBytes(file.size_bytes)}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                        file.vector_store_file_status === 'completed'
+                          ? 'bg-emerald-500/20 text-emerald-200'
+                          : file.vector_store_file_status === 'failed'
+                            ? 'bg-red-500/20 text-red-200'
+                            : 'bg-amber-500/20 text-amber-200 animate-pulse'
+                      }`}
+                    >
+                      {file.vector_store_file_status ?? 'pending'}
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-1 text-[11px] text-zinc-400">
                   OpenAI file ID: {file.openai_file_id}
                 </div>
+                {file.vector_store_file_id ? (
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    Vector store file ID: {file.vector_store_file_id}
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
