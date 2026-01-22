@@ -95,7 +95,17 @@ async def stream_chat_completion(
         if max_output_tokens is not None:
             kwargs["max_output_tokens"] = max_output_tokens
 
-        stream = await client.responses.create(**kwargs)
+        try:
+            stream = await client.responses.create(**kwargs)
+        except TypeError as exc:
+            if "tool_resources" not in str(exc):
+                raise
+            kwargs.pop("tool_resources", None)
+            if vector_store_id:
+                kwargs["tools"] = [
+                    {"type": "file_search", "vector_store_ids": [vector_store_id]}
+                ]
+            stream = await client.responses.create(**kwargs)
 
         async for event in stream:
             event_type = getattr(event, "type", None)
@@ -158,4 +168,3 @@ async def get_vector_store_file(*, vector_store_id: str, file_id: str):
         vector_store_id=vector_store_id,
         file_id=file_id,
     )
-
