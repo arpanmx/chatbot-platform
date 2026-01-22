@@ -1,8 +1,8 @@
-"""Add vector store fields
+"""Store vector store ID and vector store file ID
 
-Revision ID: 1c9ad5f9b2c7
-Revises: 8af75a24f233
-Create Date: 2026-01-18 11:12:00.000000
+Revision ID: bc69df8c5c7d
+Revises: 2a43b262c321
+Create Date: 2026-01-22 04:14:59.345299
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '1c9ad5f9b2c7'
-down_revision: Union[str, None] = '8af75a24f233'
+revision: str = 'bc69df8c5c7d'
+down_revision: Union[str, None] = '2a43b262c321'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
