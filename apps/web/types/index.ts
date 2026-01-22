@@ -2,6 +2,7 @@ export interface Project {
     id: string
     user_id: string
     name: string
+    vector_store_id?: string | null
     created_at: string
     updated_at: string
   }
@@ -34,6 +35,8 @@ export interface FileMetadata {
     id: string
     filename: string
     openai_file_id: string
+    vector_store_file_id?: string | null
+    vector_store_file_status?: string | null
     size_bytes: number | null
     mime_type?: string | null
     purpose?: string | null

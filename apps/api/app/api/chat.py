@@ -79,6 +79,8 @@ async def chat_stream(
     )
     system_prompt = active_prompt.content if active_prompt else None
 
+    vector_store_id = project.vector_store_id
+
     # 4) Load conversation history
     previous_messages = (
         db.query(Message)
@@ -107,7 +109,11 @@ async def chat_stream(
         yield f"data: {json.dumps({'type': 'start'})}\n\n"
 
         try:
-            async for event in stream_chat_completion(messages, system_prompt):
+            async for event in stream_chat_completion(
+                messages,
+                system_prompt,
+                vector_store_id=vector_store_id,
+            ):
                 # If the client disconnects, stop work early
                 if await request.is_disconnected():
                     break
@@ -146,4 +152,3 @@ async def chat_stream(
             "X-Accel-Buffering": "no",  # helps with nginx proxy buffering
         },
     )
-

@@ -13,6 +13,7 @@ class ProjectResponse(BaseModel):
     id: str
     user_id: str
     name: str
+    vector_store_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -71,6 +72,8 @@ class FileUploadResponse(BaseModel):
     id: str
     filename: str
     openai_file_id: str
+    vector_store_file_id: Optional[str] = None
+    vector_store_file_status: Optional[str] = None
     size_bytes: Optional[int]
     mime_type: Optional[str] = None
     purpose: Optional[str] = None

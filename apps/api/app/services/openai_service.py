@@ -62,6 +62,7 @@ async def stream_chat_completion(
     # keep these in signature if you want, but do NOT send temperature to gpt-5-mini
     temperature: Optional[float] = None,
     max_output_tokens: Optional[int] = None,
+    vector_store_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     client = _get_client()
 
@@ -86,10 +87,25 @@ async def stream_chat_completion(
             "instructions": merged_system_prompt,
             "stream": True,
         }
+        if vector_store_id:
+            kwargs["tools"] = [{"type": "file_search"}]
+            kwargs["tool_resources"] = {
+                "file_search": {"vector_store_ids": [vector_store_id]}
+            }
         if max_output_tokens is not None:
             kwargs["max_output_tokens"] = max_output_tokens
 
-        stream = await client.responses.create(**kwargs)
+        try:
+            stream = await client.responses.create(**kwargs)
+        except TypeError as exc:
+            if "tool_resources" not in str(exc):
+                raise
+            kwargs.pop("tool_resources", None)
+            if vector_store_id:
+                kwargs["tools"] = [
+                    {"type": "file_search", "vector_store_ids": [vector_store_id]}
+                ]
+            stream = await client.responses.create(**kwargs)
 
         async for event in stream:
             event_type = getattr(event, "type", None)
@@ -133,3 +149,22 @@ async def upload_file_to_openai(
     return await client.files.create(**kwargs)
 
 
+async def create_vector_store(*, name: str):
+    client = _get_client()
+    return await client.vector_stores.create(name=name)
+
+
+async def add_file_to_vector_store(*, vector_store_id: str, file_id: str):
+    client = _get_client()
+    return await client.vector_stores.files.create(
+        vector_store_id=vector_store_id,
+        file_id=file_id,
+    )
+
+
+async def get_vector_store_file(*, vector_store_id: str, file_id: str):
+    client = _get_client()
+    return await client.vector_stores.files.retrieve(
+        vector_store_id=vector_store_id,
+        file_id=file_id,
+    )

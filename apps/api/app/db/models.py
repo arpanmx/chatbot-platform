@@ -15,6 +15,7 @@ class Project(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, nullable=False, index=True)  # Clerk user ID
     name = Column(String, nullable=False)
+    vector_store_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -66,6 +67,7 @@ class FileMetadata(Base):
     mime_type = Column(String, nullable=True)
     purpose = Column(String, nullable=True)
     openai_file_id = Column(String, nullable=False, unique=True)
+    vector_store_file_id = Column(String, nullable=True)
     size_bytes = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
